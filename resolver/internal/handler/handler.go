@@ -51,6 +51,7 @@ type (
 	HostManager interface {
 		GetHost(req *http.Request) (*messages.Host, error)
 		DisableTrafficForHost(service string)
+		ParseAdditionalServices(req *http.Request, defaultNamespace string) []messages.ServiceIdentifier
 	}
 )
 
@@ -100,6 +101,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // handleAnyRequest handles any incoming request
 func (h *Handler) handleAnyRequest(w http.ResponseWriter, req *http.Request) (*messages.Host, error) {
+	// Log request headers for diagnostics (debug level)
+	h.logger.Debug("Incoming request headers",
+		zap.Any("headers", req.Header),
+		zap.String("host", req.Host),
+		zap.String("uri", req.RequestURI))
+
 	host, err := h.hostManager.GetHost(req)
 	if err != nil {
 		http.Error(w, "Error getting host", http.StatusInternalServerError)
@@ -128,11 +135,67 @@ func (h *Handler) handleAnyRequest(w http.ResponseWriter, req *http.Request) (*m
 	// Inform the controller about the incoming request
 	go h.operatorRPC.SendIncomingRequestInfo(host.Namespace, host.SourceService)
 
+	// Scale up additional services from header if configured
+	h.logger.Debug("Checking for additional services to scale",
+		zap.String("main_service", host.SourceService),
+		zap.String("namespace", host.Namespace))
+
+	additionalServices := h.hostManager.ParseAdditionalServices(req, host.Namespace)
+
+	h.logger.Info("ParseAdditionalServices result",
+		zap.Int("additional_service_count", len(additionalServices)),
+		zap.String("main_service", host.SourceService))
+
+	if len(additionalServices) > 0 {
+		h.logger.Info("🚀 MULTI-SERVICE SCALE-UP TRIGGERED",
+			zap.Int("additional_services_count", len(additionalServices)),
+			zap.String("main_service", host.SourceService),
+			zap.String("namespace", host.Namespace))
+
+		// Scale services concurrently for better performance
+		for i, svc := range additionalServices {
+			// Launch goroutine for each service to scale in parallel
+			// Don't block main request flow
+			go func(service, namespace string, index int) {
+				defer func() {
+					if r := recover(); r != nil {
+						h.logger.Error("Panic while scaling additional service",
+							zap.String("service", service),
+							zap.String("namespace", namespace),
+							zap.Any("panic", r))
+					}
+				}()
+
+				h.logger.Info("Sending scale-up RPC for additional service",
+					zap.Int("service_index", index+1),
+					zap.String("service", service),
+					zap.String("namespace", namespace))
+
+				h.operatorRPC.SendIncomingRequestInfo(namespace, service)
+
+				h.logger.Debug("Scale-up RPC sent for additional service",
+					zap.String("service", service),
+					zap.String("namespace", namespace))
+			}(svc.Service, svc.Namespace, i)
+		}
+	} else {
+		h.logger.Debug("No additional services to scale - single service mode")
+	}
+
 	// Send request to throttler
+	h.logger.Info("About to send request to throttler for main service",
+		zap.String("main_service", host.SourceService),
+		zap.String("target_service", host.TargetService),
+		zap.String("namespace", host.Namespace))
+
 	ctx, cancel := context.WithTimeout(context.Background(), h.timeout)
 	defer cancel()
 	if tryErr := h.throttler.Try(ctx, host,
 		func(count int) error {
+			h.logger.Info("Inside throttler callback - about to proxy request",
+				zap.Int("retry_count", count),
+				zap.String("service", host.SourceService))
+
 			err := h.ProxyRequest(w, req, host, count)
 			if err != nil {
 				h.logger.Error("Error proxying request", zap.Error(err))
@@ -141,8 +204,14 @@ func (h *Handler) handleAnyRequest(w http.ResponseWriter, req *http.Request) (*m
 				return err
 			}
 			h.hostManager.DisableTrafficForHost(host.IncomingHost)
+
+			h.logger.Info("Request successfully proxied to main service",
+				zap.String("service", host.SourceService),
+				zap.Int("retry_count", count))
+
 			return nil
 		}, func() {
+			h.logger.Debug("Throttler retry callback - sending RPC again")
 			h.operatorRPC.SendIncomingRequestInfo(host.Namespace, host.SourceService)
 		}); tryErr != nil {
 		// NOTE: Below line throws a CWE, but we identified it as false positive

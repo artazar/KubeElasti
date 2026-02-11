@@ -183,6 +183,11 @@ elastiResolver:
     ##
     env:
       headerForHost: X-Envoy-Decorator-Operation
+      # headerForScaleUp: Header containing comma-separated list of additional services to scale up
+      # Format: "service1,service2.namespace2,service3"
+      # Leave empty to disable this feature (default)
+      # Note: HTTP header size limit is typically 8KB
+      headerForScaleUp: ""
       initialCapacity: "500"
       maxIdleProxyConns: "100"
       maxIdleProxyConnsPerHost: "500"

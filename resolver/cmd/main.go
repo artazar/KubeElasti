@@ -48,6 +48,10 @@ type config struct {
 	InitialCapacity int `split_words:"true" default:"100"`
 	// HeaderForHost is the header to look for to get the host
 	HeaderForHost string `split_words:"true" default:"Host"`
+	// HeaderForScaleUp is the header containing comma-separated list of additional services to scale up
+	// Format: "service1,service2.namespace2,service3"
+	// Leave empty to disable this feature
+	HeaderForScaleUp string `split_words:"true" default:""`
 	// Sentry config
 	SentryDsn string `split_words:"true" default:""`
 	SentryEnv string `envconfig:"SENTRY_ENVIRONMENT" default:""`
@@ -87,10 +91,19 @@ func main() {
 		logger.Fatal("Error fetching cluster config", zap.Error(err))
 	}
 
+	// Log configuration for diagnostics
+	logger.Info("Resolver configuration loaded",
+		zap.String("headerForHost", env.HeaderForHost),
+		zap.String("headerForScaleUp", env.HeaderForScaleUp),
+		zap.Bool("headerForScaleUp_enabled", env.HeaderForScaleUp != ""),
+		zap.Int("reqTimeout", env.ReqTimeout),
+		zap.Int("trafficReEnableDuration", env.TrafficReEnableDuration),
+		zap.Int("operatorRetryDuration", env.OperatorRetryDuration))
+
 	// Get components required for the handler
 	k8sUtil := k8shelper.NewOps(logger, config)
 	newOperatorRPC := operator.NewOperatorClient(logger, time.Duration(env.OperatorRetryDuration)*time.Second)
-	newHostManager := hostmanager.NewHostManager(logger, time.Duration(env.TrafficReEnableDuration)*time.Second, env.HeaderForHost)
+	newHostManager := hostmanager.NewHostManager(logger, time.Duration(env.TrafficReEnableDuration)*time.Second, env.HeaderForHost, env.HeaderForScaleUp)
 	newTransport := throttler.NewProxyAutoTransport(env.MaxIdleProxyConns, env.MaxIdleProxyConnsPerHost)
 	newThrottler := throttler.NewThrottler(&throttler.Params{
 		QueueRetryDuration:      time.Duration(env.QueueRetryDuration) * time.Second,

@@ -11,9 +11,9 @@ import (
 	"github.com/truefoundry/elasti/resolver/internal/prom"
 
 	"github.com/truefoundry/elasti/pkg/logger"
+	"github.com/truefoundry/elasti/pkg/messages"
 	"github.com/truefoundry/elasti/pkg/utils"
 
-	"github.com/truefoundry/elasti/pkg/messages"
 	"go.uber.org/zap"
 )
 
@@ -25,16 +25,26 @@ type HostManager struct {
 	hosts                   sync.Map
 	trafficReEnableDuration time.Duration
 	headerForHost           string
+	headerForScaleUp        string
 }
 
 // NewHostManager returns a new HostManager
-func NewHostManager(logger *zap.Logger, trafficReEnableDuration time.Duration, headerForHost string) *HostManager {
-	return &HostManager{
+func NewHostManager(logger *zap.Logger, trafficReEnableDuration time.Duration, headerForHost string, headerForScaleUp string) *HostManager {
+	hm := &HostManager{
 		logger:                  logger.With(zap.String("component", "hostManager")),
 		hosts:                   sync.Map{},
 		trafficReEnableDuration: trafficReEnableDuration,
 		headerForHost:           headerForHost,
+		headerForScaleUp:        headerForScaleUp,
 	}
+
+	// Log initialization for diagnostics
+	hm.logger.Info("HostManager initialized",
+		zap.String("headerForHost", headerForHost),
+		zap.String("headerForScaleUp", headerForScaleUp),
+		zap.Bool("multiServiceScaleUp_enabled", headerForScaleUp != ""))
+
+	return hm
 }
 
 // GetHost returns the host details for incoming and outgoing requests
@@ -166,4 +176,104 @@ func (hm *HostManager) replaceServiceName(serviceURL, newServiceName string) str
 	}
 	parts[0] = newServiceName
 	return strings.Join(parts, ".")
+}
+
+// ParseAdditionalServices extracts comma-separated service list from headerForScaleUp header
+// Returns list of messages.ServiceIdentifier with serviceName and namespace
+// Handles formats: "service-name" (defaults to request namespace) or "service-name.namespace"
+// Maximum header size is limited to 8KB (typical HTTP header limit)
+func (hm *HostManager) ParseAdditionalServices(req *http.Request, defaultNamespace string) []messages.ServiceIdentifier {
+	// Log entry for diagnostics
+	hm.logger.Debug("ParseAdditionalServices called",
+		zap.String("headerForScaleUp_config", hm.headerForScaleUp),
+		zap.String("defaultNamespace", defaultNamespace))
+
+	if hm.headerForScaleUp == "" {
+		hm.logger.Debug("headerForScaleUp not configured, feature disabled")
+		return nil
+	}
+
+	headerValue := req.Header.Get(hm.headerForScaleUp)
+	hm.logger.Debug("Looking for header in request",
+		zap.String("header_name", hm.headerForScaleUp),
+		zap.String("header_value", headerValue),
+		zap.Int("header_length", len(headerValue)))
+
+	if headerValue == "" {
+		hm.logger.Debug("headerForScaleUp not present in request",
+			zap.String("header_name", hm.headerForScaleUp))
+		return nil
+	}
+
+	// Check header size limit (8KB is typical HTTP header limit)
+	const maxHeaderSize = 8000
+	if len(headerValue) > maxHeaderSize {
+		hm.logger.Warn("headerForScaleUp exceeds recommended size limit",
+			zap.Int("size", len(headerValue)),
+			zap.Int("max_size", maxHeaderSize),
+			zap.String("header_name", hm.headerForScaleUp))
+	}
+
+	services := strings.Split(headerValue, ",")
+	result := make([]messages.ServiceIdentifier, 0, len(services))
+
+	hm.logger.Info("Parsing additional services from header",
+		zap.String("header_value", headerValue),
+		zap.Int("raw_service_count", len(services)))
+
+	for _, svc := range services {
+		svc = strings.TrimSpace(svc)
+		if svc == "" {
+			continue
+		}
+
+		// Parse "service" or "service.namespace" format
+		parts := strings.Split(svc, ".")
+		var serviceName, namespace string
+
+		if len(parts) == 1 {
+			serviceName = parts[0]
+			namespace = defaultNamespace
+		} else if len(parts) >= 2 {
+			serviceName = parts[0]
+			namespace = parts[1]
+		}
+
+		// Validate service name format (kubernetes naming constraints)
+		if !isValidKubernetesName(serviceName) || !isValidKubernetesName(namespace) {
+			hm.logger.Warn("Invalid service identifier in headerForScaleUp",
+				zap.String("original_value", svc),
+				zap.String("parsed_service", serviceName),
+				zap.String("parsed_namespace", namespace),
+				zap.String("header_name", hm.headerForScaleUp))
+			continue
+		}
+
+		hm.logger.Debug("Valid service parsed",
+			zap.String("service", serviceName),
+			zap.String("namespace", namespace))
+
+		result = append(result, messages.ServiceIdentifier{
+			Service:   serviceName,
+			Namespace: namespace,
+		})
+	}
+
+	hm.logger.Info("Additional services parsed successfully",
+		zap.Int("valid_service_count", len(result)),
+		zap.String("header_name", hm.headerForScaleUp))
+
+	return result
+}
+
+// isValidKubernetesName validates kubernetes resource names according to DNS-1123 label standard
+// Must consist of lower case alphanumeric characters or '-', start and end with alphanumeric
+// Maximum length is 253 characters
+func isValidKubernetesName(name string) bool {
+	if name == "" || len(name) > 253 {
+		return false
+	}
+	// Basic validation - alphanumeric, dash, must start/end with alphanumeric
+	matched, _ := regexp.MatchString(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, name)
+	return matched
 }

@@ -119,6 +119,10 @@ spec:
           value: {{ quote .Values.elastiResolver.proxy.env.operatorRetryDuration }}
         - name: HEADER_FOR_HOST
           value: {{ quote .Values.elastiResolver.proxy.env.headerForHost }}
+        {{- with .Values.elastiResolver.proxy.env.headerForScaleUp }}
+        - name: HEADER_FOR_SCALE_UP
+          value: {{ quote . }}
+        {{- end }}
         - name: QUEUE_SIZE
           value: {{ quote .Values.elastiResolver.proxy.env.queueSize }}
         - name: QUEUE_RETRY_DURATION
