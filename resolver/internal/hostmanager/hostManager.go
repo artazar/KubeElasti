@@ -88,13 +88,20 @@ func (hm *HostManager) DisableTrafficForHost(hostName string) {
 	if host, ok := hm.hosts.Load(hostName); ok && host.(*messages.Host).TrafficAllowed {
 		host.(*messages.Host).TrafficAllowed = false
 		hm.hosts.Store(hostName, host)
-		hm.logger.Debug("Disabled traffic for host",
+		hm.logger.Info("🚫 Traffic DISABLED for host (will re-enable after timeout)",
 			zap.String("hostName", logger.MaskMiddle(hostName, 4, 4)),
-			zap.Duration("trafficReEnableDuration", hm.trafficReEnableDuration))
+			zap.Duration("trafficReEnableDuration", hm.trafficReEnableDuration),
+			zap.String("reason", "First request proxied successfully - switching from proxy to serve mode"))
 		go time.AfterFunc(hm.trafficReEnableDuration, func() {
 			hm.enableTrafficForHost(hostName)
 		})
 		prom.TrafficSwitchCounter.WithLabelValues(hostName, "disabled").Inc()
+	} else if !ok {
+		hm.logger.Warn("Attempted to disable traffic for unknown host",
+			zap.String("hostName", logger.MaskMiddle(hostName, 4, 4)))
+	} else {
+		hm.logger.Debug("Traffic already disabled for host",
+			zap.String("hostName", logger.MaskMiddle(hostName, 4, 4)))
 	}
 }
 
@@ -103,8 +110,15 @@ func (hm *HostManager) enableTrafficForHost(hostName string) {
 	if host, ok := hm.hosts.Load(hostName); ok && !host.(*messages.Host).TrafficAllowed {
 		host.(*messages.Host).TrafficAllowed = true
 		hm.hosts.Store(hostName, host)
-		hm.logger.Debug("Enabled traffic for host", zap.Any("hostName", logger.MaskMiddle(hostName, 4, 4)))
+		hm.logger.Info("✅ Traffic RE-ENABLED for host (switched to serve mode)",
+			zap.String("hostName", logger.MaskMiddle(hostName, 4, 4)))
 		prom.TrafficSwitchCounter.WithLabelValues(hostName, "enabled").Inc()
+	} else if !ok {
+		hm.logger.Warn("Attempted to enable traffic for unknown host",
+			zap.String("hostName", logger.MaskMiddle(hostName, 4, 4)))
+	} else {
+		hm.logger.Debug("Traffic already enabled for host",
+			zap.String("hostName", logger.MaskMiddle(hostName, 4, 4)))
 	}
 }
 

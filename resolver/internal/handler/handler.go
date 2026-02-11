@@ -119,8 +119,12 @@ func (h *Handler) handleAnyRequest(w http.ResponseWriter, req *http.Request) (*m
 	defer prom.QueuedRequestGauge.WithLabelValues(host.SourceService, host.Namespace).Dec()
 
 	// This closes the connections, in case the host is scaled up by the controller.
+	// NOTE: With the fix for multi-service scale-up, this should NEVER be triggered
+	// because we no longer call DisableTrafficForHost. If you see this log, there's a bug.
 	if !host.TrafficAllowed {
-		h.logger.Info("Traffic not allowed", zap.Any("host", logger.MaskMiddle(host.IncomingHost, 4, 4)))
+		h.logger.Error("⛔ UNEXPECTED: Traffic NOT ALLOWED - This should not happen!",
+			zap.String("host", logger.MaskMiddle(host.IncomingHost, 4, 4)),
+			zap.String("reason", "Traffic was disabled but this is unexpected - possible bug"))
 		w.Header().Set("Connection", "close")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -203,7 +207,14 @@ func (h *Handler) handleAnyRequest(w http.ResponseWriter, req *http.Request) (*m
 				hub.CaptureException(err)
 				return err
 			}
-			h.hostManager.DisableTrafficForHost(host.IncomingHost)
+
+			// NOTE: DisableTrafficForHost is intentionally NOT called here
+			// The resolver should continue proxying ALL requests until the operator
+			// switches to serve mode (by deleting the resolver endpointslice).
+			// Calling DisableTrafficForHost causes a blackout window where requests
+			// get 403 errors while the operator is still switching modes.
+			// See: https://github.com/truefoundry/KubeElasti/issues/XXX
+			// h.hostManager.DisableTrafficForHost(host.IncomingHost)
 
 			h.logger.Info("Request successfully proxied to main service",
 				zap.String("service", host.SourceService),
