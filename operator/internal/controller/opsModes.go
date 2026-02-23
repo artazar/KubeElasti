@@ -90,9 +90,14 @@ func (r *ElastiServiceReconciler) enableServeMode(ctx context.Context, es *v1alp
 		Name:      es.Spec.Service,
 		Namespace: es.Namespace,
 	}
-	if err := r.deleteEndpointsliceToResolver(ctx, targetNamespacedName); err != nil {
-		return fmt.Errorf("failed to delete endpointslice to resolver: %w", err)
+
+	// Use blue-green strategy for zero-downtime switching
+	// This verifies natural endpointslice is healthy, waits for propagation, then deletes resolver endpointslice
+	if err := r.deleteEndpointsliceToResolverWithBlueGreen(ctx, targetNamespacedName, r.EndpointSlicePropagationDelay); err != nil {
+		return fmt.Errorf("failed to delete endpointslice to resolver (blue-green): %w", err)
 	}
-	r.Logger.Info("1. Deleted endpointslice to resolver", zap.String("service", targetNamespacedName.String()))
+	r.Logger.Info("1. Deleted endpointslice to resolver using blue-green strategy (zero downtime)",
+		zap.String("service", targetNamespacedName.String()),
+		zap.Duration("propagation_delay", r.EndpointSlicePropagationDelay))
 	return nil
 }

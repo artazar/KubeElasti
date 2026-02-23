@@ -52,6 +52,10 @@ KubeElasti uses a proxy mechanism that queues and holds requests for scaled-down
 
 ## Key Features
 
+- **Zero-Downtime Scale-Up:** KubeElasti ensures no dropped requests during scale-up with intelligent request queueing and blue-green endpoint switching, maintaining 100% availability throughout the scaling process.
+
+- **Multi-Service Scale-Up:** Scale multiple dependent services simultaneously from a single request using the `headerForScaleUp` feature, perfect for microservice architectures with complex dependencies.
+
 - **Seamless Integration:** KubeElasti integrates effortlessly with your existing Kubernetes setup - whether you are using HPA or Keda. It takes just a few steps to enable scale to zero for any service.
 
 - **Deployment, StatefulSet, Argo Rollouts Support:** KubeElasti supports three scale target references: Deployment, StatefulSet and Argo Rollouts, making it versatile for various deployment scenarios.

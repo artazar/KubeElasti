@@ -26,6 +26,7 @@ spec:
       containers:
       - args:
         {{- toYaml .Values.elastiController.manager.args | nindent 8 }}
+        - --endpointslice-propagation-delay={{ .Values.elastiController.manager.endpointSlicePropagationDelay }}
         command:
         - /manager
         env:

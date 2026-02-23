@@ -105,6 +105,7 @@ func mainWithError() error {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var endpointSlicePropagationDelay int
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -114,6 +115,8 @@ func mainWithError() error {
 		"If set the metrics endpoint is served securely")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.IntVar(&endpointSlicePropagationDelay, "endpointslice-propagation-delay", 30,
+		"Delay in seconds to wait for endpointslice propagation during blue-green switching (default: 30s)")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -173,12 +176,16 @@ func mainWithError() error {
 
 	// Set up the ElastiService controller
 	reconciler := &controller.ElastiServiceReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		Logger:          zapLogger,
-		InformerManager: informerManager,
-		ScaleHandler:    scaleHandler,
+		Client:                        mgr.GetClient(),
+		Scheme:                        mgr.GetScheme(),
+		Logger:                        zapLogger,
+		InformerManager:               informerManager,
+		ScaleHandler:                  scaleHandler,
+		EndpointSlicePropagationDelay: time.Duration(endpointSlicePropagationDelay) * time.Second,
 	}
+
+	setupLog.Info("ElastiService reconciler configured",
+		"endpointslice-propagation-delay", time.Duration(endpointSlicePropagationDelay)*time.Second)
 
 	if err = reconciler.SetupWithManager(mgr, watchNamespace); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ElastiService")

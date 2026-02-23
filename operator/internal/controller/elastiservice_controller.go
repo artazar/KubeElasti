@@ -30,13 +30,14 @@ type (
 	SwitchModeFunc          func(ctx context.Context, req ctrl.Request, mode string) (res ctrl.Result, err error)
 	ElastiServiceReconciler struct {
 		client.Client
-		Scheme             *kRuntime.Scheme
-		Logger             *zap.Logger
-		InformerManager    *informer.Manager
-		SwitchModeLocks    sync.Map
-		ScaleHandler       *scaling.ScaleHandler
-		InformerStartLocks sync.Map
-		ReconcileLocks     sync.Map
+		Scheme                      *kRuntime.Scheme
+		Logger                      *zap.Logger
+		InformerManager             *informer.Manager
+		SwitchModeLocks             sync.Map
+		ScaleHandler                *scaling.ScaleHandler
+		InformerStartLocks          sync.Map
+		ReconcileLocks              sync.Map
+		EndpointSlicePropagationDelay time.Duration // Delay for blue-green endpointslice switching
 	}
 )
 

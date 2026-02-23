@@ -145,7 +145,18 @@ Note right of Operator: When in Proxy Mode
 
 ## **3. Scale up from 0:** when the first request arrives
 
-Since the service is scaled down to 0, all requests will hit the KubeElasti resolver. When the first request arrives, KubeElasti will scale up the service to the configured minTargetReplicas. It then resumes Keda to continue autoscaling in case there is a sudden burst of requests. It also changes the service to point to the actual service pods once the pod is up. Requests reaching the KubeElasti resolver are retried for up to five minutes before a response is returned to the client. If the pod takes more than 5 mins to come up, the request is dropped.
+Since the service is scaled down to 0, all requests will hit the KubeElasti resolver. When the first request arrives, KubeElasti will scale up the service to the configured minTargetReplicas. It then resumes Keda to continue autoscaling in case there is a sudden burst of requests.
+
+**Zero-Downtime Guarantees:**
+
+- Requests are queued in resolver memory (connection remains open)
+- Resolver continuously proxies all requests - no 403 errors
+- Blue-green endpoint switching ensures no 503 errors during mode transition
+- All requests succeed from first request through complete scale-up
+
+See [Zero-Downtime Architecture](arch-zero-downtime.md) for technical details.
+
+Requests reaching the KubeElasti resolver are retried for up to five minutes (configurable) before timing out. The resolver transitions to serve mode using a safe blue-green strategy that waits for endpoint propagation before switching traffic routing.
 
 ``` mermaid
 ---

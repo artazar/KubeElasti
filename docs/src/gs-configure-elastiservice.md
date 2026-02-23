@@ -134,3 +134,7 @@ autoscaler:
 As soon as the service is scaled down to 0, KubeElasti **resolver** will start accepting requests for that service. On receiving the first request, it will scale up the service to `minTargetReplicas`. Once the pod is up, the new requests are handled by the service pods and do not pass through the elasti-resolver. The requests that came before the pod scaled up are held in memory of the elasti-resolver and are processed once the pod is up.
 
 We can configure the `cooldownPeriod` to specify the minimum time (in seconds) to wait after scaling up before considering scale down.
+
+**Zero-Downtime Features:** KubeElasti ensures no requests are dropped during scale-up through intelligent request queueing and blue-green endpoint switching. See [Zero-Downtime Architecture](arch-zero-downtime.md) for details.
+
+**Multi-Service Scale-Up:** You can scale multiple dependent services simultaneously from a single request using the `headerForScaleUp` feature. See [Multi-Service Scale-Up](multi-service-scale-up.md) for configuration details.

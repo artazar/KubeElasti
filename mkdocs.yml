@@ -220,6 +220,8 @@ nav:
   - Architecture:
       - Overview: src/arch-architecture.md
       - Flow: src/arch-flow.md
+      - Zero-Downtime: src/arch-zero-downtime.md
+      - Multi-Service Scale-Up: src/multi-service-scale-up.md
       - Resolver: src/arch-resolver.md
       - Operator: src/arch-operator.md
       - Monitoring: src/arch-monitoring.md

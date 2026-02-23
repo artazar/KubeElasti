@@ -62,6 +62,10 @@ elastiController:
       - --leader-elect
       - --health-probe-bind-address=:8081
       - --metrics-bind-address=0
+    ## @param elastiController.manager.endpointSlicePropagationDelay Delay in seconds for blue-green endpointslice switching (default: 30)
+    ## This delay ensures zero-downtime during mode transitions by waiting for kube-proxy/service mesh to propagate routing tables
+    ##
+    endpointSlicePropagationDelay: 30
     ## @param elastiController.manager.containerSecurityContext [object] container security context
     ##
     containerSecurityContext:
@@ -175,7 +179,6 @@ elastiController:
     labels: {}
     ## @param elastiController.serviceMonitor.annotations [object] annotations to apply to serviceMonitor
     annotations: {}
-
 ## @section Elasti resolver parameters
 elastiResolver:
   proxy:
